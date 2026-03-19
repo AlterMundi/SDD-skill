@@ -25,6 +25,38 @@ Run the full SDD cycle: clarifying questions → SPEC → PLAN → task preview 
 
 ---
 
+## Prerequisites check
+
+**Before starting Phase 1**, verify Lattice is available by calling `lattice_list` via MCP.
+
+- **If it succeeds** — all good, proceed to Phase 1.
+- **If it fails** — Lattice is not installed. Tell the user:
+
+  ```
+  ⚠️  Lattice is not installed. It is required for Phase 4 (task tracking and worker spawning).
+
+  To install:
+    uv tool install --force 'lattice-tracker[mcp]'
+    cd <path-to-Skills-repo>/mcps/agentic-workspace && ./install.sh
+
+  If uv is not installed:
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    source ~/.local/bin/env
+    uv tool install --force 'lattice-tracker[mcp]'
+    cd <path-to-Skills-repo>/mcps/agentic-workspace && ./install.sh
+
+  After installing, restart Claude Code so the Lattice MCP is picked up.
+
+  Options:
+    [1] Stop here and install now (recommended)
+    [2] Continue without Lattice — Phase 4 will run in sequential mode (no parallel workers)
+  ```
+
+  Wait for the user's choice before proceeding. If they choose [2], note that Phase 4 will
+  use sequential mode regardless of task count, and skip all Lattice/agentic-workspace steps.
+
+---
+
 ## Phase 1: SPEC
 
 **Goal:** Define *what* to build. Functional layer only — no implementation details yet.

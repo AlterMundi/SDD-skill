@@ -12,6 +12,28 @@ SDD solves this by defining *what* to build and *how* to build it before a singl
 >
 > — [@juliandeangeIis](https://x.com/juliandeangeIis/status/2033303156340240481)
 
+## Prerequisites
+
+SDD phases 1–3 (Spec, Plan, task preview) work with no setup beyond the skill itself.
+Phase 4 (parallel worker execution) requires Lattice and `agentic-workspace`:
+
+```bash
+# If uv is not installed:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source ~/.local/bin/env
+
+# Install Lattice
+uv tool install --force 'lattice-tracker[mcp]'
+
+# Install agentic-workspace (registers Lattice MCP in Claude Code)
+cd <path-to-Skills-repo>/mcps/agentic-workspace && ./install.sh
+```
+
+Then **restart Claude Code** so the Lattice MCP is picked up.
+
+If Lattice is not installed, the skill will detect it at startup and offer to either stop for
+installation or continue in sequential mode (no parallel workers).
+
 ## How It Works
 
 ```
@@ -95,25 +117,6 @@ lattice dashboard         # opens browser UI
 lattice list              # CLI table view
 lattice list --status in_progress
 lattice show PROJ-1 --full
-```
-
-### Installation
-
-Lattice and `agentic-workspace` are prerequisites for the full SDD execution phase:
-
-```bash
-# 1. Install Lattice CLI
-uv tool install --force 'lattice-tracker[mcp]'
-
-# 2. Install agentic-workspace (registers Lattice MCP in Claude Code)
-cd mcps/agentic-workspace
-./install.sh
-```
-
-Once installed, start a workspace in your project:
-
-```bash
-agentic-workspace start --project . --code MY-PROJECT
 ```
 
 ### How it fits in the SDD workflow
