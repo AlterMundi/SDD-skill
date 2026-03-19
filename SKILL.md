@@ -137,28 +137,51 @@ Proceed?
 
 ## Phase 4: IMPLEMENT
 
-**Goal:** Create Lattice tasks and execute them, with batched checkpoints.
+**Goal:** Materialize tasks in Lattice and dispatch workers to implement them.
 
-### Steps
+> **CRITICAL — You are the orchestrator, not the implementor.**
+> Do NOT write code yourself in this phase. Your job is to create Lattice tasks and spawn
+> workers that will do the implementation. The only exception is if the user explicitly asks
+> you to implement directly (e.g. "just do it yourself, no workers").
 
-1. Create a Lattice project for this feature:
-   ```bash
-   lattice project create "sdd-<feature-slug>"
+### Execution mode
+
+Ask the user before proceeding:
+
+```
+Ready to create Lattice tasks and spawn workers.
+Execution mode:
+  [1] Full — parallel workers via agentic-workspace (recommended for 3+ tasks)
+  [2] Sequential — I implement each task myself, one at a time (ok for 1-2 small tasks)
+Which mode?
+```
+
+If the user chooses **mode 2**, skip the worker steps below and implement each task
+sequentially, pausing for checkpoint after each one.
+
+### Steps (mode 1 — parallel workers)
+
+1. Create Lattice tasks using the MCP tools. For each task from the approved preview:
    ```
-2. Create tasks in Lattice from the approved preview. Include `spec_ref`, acceptance criteria, and dependencies in each task description:
-   ```bash
-   lattice create --title "<title>" --description "spec_ref: REQ-001\n\n<acceptance criteria>"
-   lattice link TASK-001 blocks TASK-002
+   lattice_create(title="<title>", description="spec_ref: REQ-###\n\n<acceptance criteria>\n\nTest plan: <test plan>")
    ```
-3. Initialize IAxP governance (only at this phase):
+   Capture the returned task ID (e.g. `PROJ-1`) for each task.
+
+2. Link dependencies using the returned IDs:
+   ```
+   lattice_link(source_id="PROJ-1", target_id="PROJ-2", link_type="blocks")
+   ```
+
+3. Initialize IAxP governance and start the workspace:
    ```bash
    agentic-workspace collab-init --project . --agents "claude:implementor,codex:auditor"
-   ```
-4. Spawn workers:
-   ```bash
    agentic-workspace start --project . --orchestrator claude --heartbeat-interval 30
-   agentic-workspace spawn claude --task TASK-001
-   agentic-workspace spawn codex --task TASK-002 --worktree
+   ```
+
+4. Spawn workers for independent (unblocked) tasks:
+   ```bash
+   agentic-workspace spawn claude --task PROJ-1
+   agentic-workspace spawn codex  --task PROJ-2 --worktree   # runs in parallel with PROJ-1
    ```
 
 ### Execution checkpoints
