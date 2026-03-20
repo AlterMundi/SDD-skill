@@ -2,6 +2,7 @@
 Feature: <!-- feature name -->
 Author: <!-- your name -->
 Date: <!-- YYYY-MM-DD -->
+Version: 1.0
 ---
 
 # Spec: <!-- Feature Name -->
@@ -92,3 +93,8 @@ Then <outcome>
 | # | Question | Owner | ETA |
 |---|----------|-------|-----|
 | 1 | <!-- ... --> | <!-- ... --> | <!-- ... --> |
+
+## Amendment Log
+
+<!-- Record changes made to this spec after implementation began. Format: [YYYY-MM-DD] REQ-### changed: <what changed and why> -->
+<!-- ... -->

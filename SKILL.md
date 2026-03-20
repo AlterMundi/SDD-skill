@@ -22,6 +22,7 @@ Run the full SDD cycle: clarifying questions → SPEC → PLAN → optional audi
 ## When NOT to use
 
 - Small bug fix, config change, or single-file edit → use Plan mode instead
+- For very large features, consider splitting into independent sub-features, each with its own SDD cycle
 
 ---
 
@@ -37,6 +38,8 @@ This skill is platform-agnostic. Where specific tool calls are needed, use the a
 | **Spawn worker** | `Agent` tool with `isolation: "worktree"` | `agentic-workspace spawn` (requires tmux) | run a new agent session in a fresh worktree |
 | **ia-bridge audit** | `mcp__ia-bridge-mcp__single_opinion_run` | `ia-bridge` CLI | `ia-bridge` CLI |
 | **Check Lattice init** | `lattice_list` MCP tool → inspect error | `lattice list` CLI → inspect error | `lattice list` CLI → inspect error |
+| **Lattice: archive task** | `lattice_archive` MCP tool | `lattice archive` CLI | `lattice archive` CLI |
+| **Lattice: stop dashboard** | n/a (MCP only) | `lattice dashboard --stop` | `lattice dashboard --stop` |
 
 If none of the above worker-spawning options are available, fall back to sequential self-implementation (Phase 4, mode 2).
 
@@ -64,8 +67,8 @@ Check using the adapter for your platform (MCP tool or CLI — see Platform Adap
     source ~/.local/bin/env
     uv tool install --force 'lattice-tracker[mcp]'
 
-  For Claude Code: also register the Lattice MCP:
-    cd <path-to-Skills-repo>/mcps/agentic-workspace && ./install.sh
+  For Claude Code: also register the Lattice MCP server in your Claude Code settings
+    (the MCP server is bundled with lattice-tracker[mcp] — see README for setup).
     Then restart your agent environment so the MCP is picked up.
 
   Options:
@@ -113,7 +116,7 @@ If Lattice is available, verify it is initialized for this project.
    - **Observability** — what needs to be logged or measured?
    - **Back-compat** — does this break existing behavior?
 3. Ask only about the dimensions you cannot confidently infer. Batch questions — do not ask one at a time.
-4. Once answers are in, generate `SDD/<feature-slug>/SPEC.md` using `skills/sdd/templates/SPEC.md`.
+4. Once answers are in, generate `SDD/<feature-slug>/SPEC.md` using `templates/SPEC.md`.
    - Use `REQ-001`, `REQ-002`, ... for all functional requirements.
    - Write acceptance criteria in Given/When/Then format, referencing the REQ.
    - Keep it tech-agnostic — no implementation decisions here.
@@ -122,7 +125,7 @@ If Lattice is available, verify it is initialized for this project.
 
 **PAUSE.** Present the spec. Ask the user to approve or request changes.
 
-**Revision loop:** If rejected, amend the spec in-place, show the diff, and re-present. Maximum 3 revision rounds. If still unresolved after 3 rounds, ask the user to edit the file directly and signal when ready.
+**Revision loop:** If rejected, amend the spec in-place, show the diff, and re-present. Maximum 3 revision rounds. If still unresolved after 3 rounds, ask the user to either edit the file directly and signal when ready, or approve as-is and log the disagreement in the Decision Log.
 
 ---
 
@@ -138,7 +141,7 @@ If Lattice is available, verify it is initialized for this project.
    - Hotspots (files likely to change)
    - Existing patterns to follow (with file:line references)
    - Dependencies and migration surface
-3. Generate `SDD/<feature-slug>/PLAN.md` using `skills/sdd/templates/PLAN.md`.
+3. Generate `SDD/<feature-slug>/PLAN.md` using `templates/PLAN.md`.
    - Every file that will be created or modified must appear in the File Change Manifest.
    - Map each change to its REQ refs.
    - Specify rollback procedure, failure modes, observability, and risks.
@@ -149,7 +152,7 @@ If Lattice is available, verify it is initialized for this project.
 
 **PAUSE.** Present the plan. Ask the user to approve or request changes.
 
-**Revision loop:** Same as SPEC — amend in-place, show diff, max 3 rounds, then escalate.
+**Revision loop:** Same as SPEC — amend in-place, show diff, max 3 rounds, then escalate (edit directly or approve as-is with disagreement in the Decision Log).
 
 ---
 
@@ -210,6 +213,8 @@ Wait for the answer before decomposing.
 3. **If execution model is parallel (mode 1):** each task description must include a "Cold Agent Context" section (see below). Sequential tasks (mode 2) may omit it.
 4. Present the task list as a **transient preview** in chat — do not create a `TASKS.md` file. Format:
 
+> **`review_steps`** — commands the orchestrator runs after a task completes to verify correctness (build, tests, lints). Must be fast, deterministic, and exit non-zero on failure.
+
 ```
 TASK-001: <title>
   spec_ref: REQ-001
@@ -238,7 +243,7 @@ TASK-002: <title>
   ...
 ```
 
-5. Check: is the list overengineered? Can tasks be merged? Flag if yes.
+5. Check: is the list overengineered? Can tasks be merged? Flag if yes. If a task touches more than 5 files, verify it is still atomic and independently reviewable — if not, split it.
 
 ### Cold Agent Context guidance
 
@@ -326,12 +331,37 @@ Do NOT pause after every single task. Instead, checkpoint at:
 
 At each checkpoint: review completed work, confirm it satisfies acceptance criteria, then proceed.
 
+### Worker Failure Protocol
+
+If a worker reports a failure, do not retry indefinitely. Apply this decision tree:
+
+- **Test failure** — retry once with a clean state (fresh worktree or cleared cache). If it persists, mark the Lattice task as `blocked`, attach the failure diff as a comment, and report to the user.
+- **Merge conflict** — attempt rebase. If unresolved, mark `blocked` and escalate to the user.
+- **Timeout / stall** — reduce the task scope or split it into smaller tasks. Flag the partial work to the user.
+- Always log the failure and decision as a Lattice task comment (MCP: `lattice_comment` / CLI: `lattice comment`).
+
+### Spec Amendment Protocol
+
+If implementation reveals that a requirement must change mid-Phase 4:
+
+1. Pause active workers on affected tasks.
+2. Amend `SDD/<feature-slug>/SPEC.md` in-place — bump the `Version` field and append an entry to the `Amendment Log`.
+3. Identify stale tasks by their `spec_ref` tag matching the changed REQ.
+4. **PAUSE.** Present the amendment and affected tasks to the user. Get explicit approval.
+5. Update or recreate the stale Lattice tasks to reflect the new requirements.
+6. Resume workers.
+
+> Do not restart from Phase 1. Amendments are surgical — only the affected REQs and tasks change.
+
 ### Completion
 
 When all tasks are done:
 1. Verify all acceptance criteria from SPEC are satisfied.
 2. Commit `SDD/<feature-slug>/` to the repo alongside the code changes.
 3. Report: tasks completed, any open risks, any deviations from the spec.
+4. Clean up Lattice:
+   - Archive all completed tasks — MCP: `lattice_archive(task_id="...", actor="...")` for each / CLI: `lattice archive <task-id>`
+   - Stop the dashboard if it was started: `lattice dashboard --stop`
 
 ---
 
@@ -354,4 +384,4 @@ Never restart from scratch if artifacts already exist. Present what was found an
 | `SDD/<slug>/PLAN.md` | Technical plan | Yes |
 | Task list | Transient preview only — source of truth is Lattice | No |
 
-Templates: `skills/sdd/templates/`
+Templates: `templates/`

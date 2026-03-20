@@ -19,7 +19,7 @@ SDD solves this by defining *what* to build and *how* to build it before a singl
 Install the skill as a symlink into Claude Code's skills directory:
 
 ```bash
-ln -sfn /path/to/Skills/skills/sdd ~/.claude/skills/sdd
+ln -sfn /path/to/SDD-skill ~/.claude/skills/sdd
 ```
 
 Because it's a symlink, **no reinstall is needed** — a `git pull` on this repo is all you need to get the latest version. The next `/sdd` run will use the updated skill automatically.
@@ -53,9 +53,16 @@ source ~/.local/bin/env
 uv tool install --force 'lattice-tracker[mcp]'
 ```
 
-**Claude Code only:** also register the Lattice MCP so the agent can call Lattice tools directly:
-```bash
-cd <path-to-Skills-repo>/mcps/agentic-workspace && ./install.sh
+**Claude Code only:** also register the Lattice MCP so the agent can call Lattice tools directly. The MCP server is bundled with `lattice-tracker[mcp]` — add it to your Claude Code MCP settings (e.g. in `.claude/settings.json`):
+```json
+{
+  "mcpServers": {
+    "lattice": {
+      "command": "lattice",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
 Then restart your agent environment so the MCP is picked up.
 
