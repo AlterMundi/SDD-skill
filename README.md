@@ -14,28 +14,35 @@ SDD solves this by defining *what* to build and *how* to build it before a singl
 
 ## Installation & Updates
 
-### Install the skill
+### Claude Code
 
-The skill is installed as a symlink into Claude Code's skills directory. You only do this once:
+Install the skill as a symlink into Claude Code's skills directory:
 
 ```bash
 ln -sfn /path/to/Skills/skills/sdd ~/.claude/skills/sdd
 ```
 
-### Staying up to date
+Because it's a symlink, **no reinstall is needed** — a `git pull` on this repo is all you need to get the latest version. The next `/sdd` run will use the updated skill automatically.
 
-Because it's a symlink, **no reinstall is needed**. The skill reads `SKILL.md` at invocation time, so a `git pull` on this repo is all you need to get the latest version:
+### Cursor, Codex, or any other agent
 
-```bash
-cd /path/to/Skills && git pull
-```
+The skill is a plain markdown file. Point your agent at it directly:
 
-The next `/sdd` run will use the updated skill automatically.
+- **Cursor**: add a reference to `SKILL.md` in your `.cursor/rules/` or paste the content into a project rule.
+- **Codex**: pass it via `--instructions` or reference it in `.codex/instructions.md`.
+- **Any agent that can read files**: instruct the agent to read `SKILL.md` and follow the SDD workflow.
+
+No special installation needed — the methodology is self-contained in the file.
 
 ## Prerequisites
 
-SDD phases 1–3 (Spec, Plan, task preview) work with no setup beyond the skill itself.
-Phase 4 (parallel worker execution) requires Lattice and `agentic-workspace`:
+### Core (required for Phases 1–3)
+
+No setup required. SPEC, PLAN, and task preview work with any agent that can read and write markdown files.
+
+### Lattice (required for Phase 4 parallel execution)
+
+Lattice is a local task tracker (CLI + MCP + web dashboard). No external service, no account.
 
 ```bash
 # If uv is not installed:
@@ -44,20 +51,30 @@ source ~/.local/bin/env
 
 # Install Lattice
 uv tool install --force 'lattice-tracker[mcp]'
-
-# Install agentic-workspace (registers Lattice MCP in Claude Code)
-cd <path-to-Skills-repo>/mcps/agentic-workspace && ./install.sh
 ```
 
-Then **restart Claude Code** so the Lattice MCP is picked up.
+**Claude Code only:** also register the Lattice MCP so the agent can call Lattice tools directly:
+```bash
+cd <path-to-Skills-repo>/mcps/agentic-workspace && ./install.sh
+```
+Then restart your agent environment so the MCP is picked up.
 
-If Lattice is not installed, the skill will detect it at startup and offer to either stop for
-installation or continue in sequential mode (no parallel workers).
+If Lattice is not installed, the skill detects it at startup and offers to either stop for installation or continue in sequential mode (no parallel workers).
+
+### ia-bridge (optional — Phase 2.5 peer audit)
+
+[ia-bridge-mcp](https://github.com/AlterMundi/ia-bridge-mcp) enables a structured peer audit of your PLAN by a second agent (Codex or another Claude instance) before task decomposition. Recommended for risky or complex changes — it can surface import/API contract gaps and other issues the primary agent missed.
+
+**Claude Code:** install the MCP server following the ia-bridge-mcp repo instructions.
+**Other agents:** use the `ia-bridge` CLI directly.
+
+The audit step (Phase 2.5) is optional and skippable — the skill will prompt you.
 
 ## How It Works
 
 ```
-/sdd "feature description"
+/sdd "feature description"          ← Claude Code invocation
+# or: ask your agent to follow SKILL.md for other environments
    │
    ├─ Clarifying questions → surface hidden assumptions
    │
@@ -66,21 +83,27 @@ installation or continue in sequential mode (no parallel workers).
    ├─ Codebase exploration
    ├─ SDD/<feature-slug>/PLAN.md    ← PAUSE: human approves
    │
+   ├─ [optional] ia-bridge peer audit of PLAN
+   │                                ← PAUSE: human approves any plan amendments
+   │
+   ├─ Execution model decision (parallel workers vs sequential)
+   │
    ├─ Transient task preview (shown in chat)
    │   └─ lattice create for each task with spec_ref backlinks
    │                                ← PAUSE: human approves
    │
-   └─ agentic-workspace spawn workers → batched execution checkpoints
+   └─ Workers dispatched → batched execution checkpoints
 ```
 
-## The Four Phases
+## The Five Phases
 
 | Phase | Output | Human gate |
 |-------|--------|------------|
-| **Spec** | `SDD/<slug>/SPEC.md` — *what* to build, functional layer only | Required |
-| **Plan** | `SDD/<slug>/PLAN.md` — *how* to build it, technical layer | Required |
-| **Tasks** | Transient preview → Lattice tasks with `spec_ref` | Required |
-| **Implement** | Workers via `agentic-workspace`, batched checkpoints | Per batch/boundary |
+| **1 · Spec** | `SDD/<slug>/SPEC.md` — *what* to build, functional layer only | Required |
+| **2 · Plan** | `SDD/<slug>/PLAN.md` — *how* to build it, technical layer | Required |
+| **2.5 · Audit** | ia-bridge peer review of PLAN, findings resolved | Optional |
+| **3 · Tasks** | Transient preview → Lattice tasks with `spec_ref` and cold-agent context | Required |
+| **4 · Implement** | Workers via worktree isolation, batched checkpoints | Per batch/boundary |
 
 ## Artifact Structure
 
@@ -120,15 +143,15 @@ The SPEC uses numbered requirements (`REQ-001`, `REQ-002`). Every Lattice task c
 
 ## Integration with This Repo's Tooling
 
-- **agentic-workspace** — executes tasks as parallel workers with Lattice tracking
+- **agentic-workspace** — executes tasks as parallel workers with Lattice tracking (requires tmux + interactive terminal)
 - **ia-exchange-protocol (IAxP)** — governs multi-agent coordination during execution (activated *after* PLAN approval, not during spec writing)
-- **ia-bridge-mcp** — use `/peer-opinion:forum` to audit your SPEC or PLAN before approving
+- **ia-bridge-mcp** ([repo](https://github.com/AlterMundi/ia-bridge-mcp)) — peer audit of SPEC or PLAN by a second agent before task decomposition (Phase 2.5). Use `/peer-opinion:forum` in Claude Code or the `ia-bridge` CLI in other environments.
 
 ## What is Lattice?
 
 Lattice (`lattice-tracker`) is a **local task tracker** — a CLI + MCP + web dashboard. No external service, no account. It stores task state in a `.lattice/` folder at your project root (git-ignored).
 
-Workers (Claude/Codex agents) interact with it through the **Lattice MCP**, which gets registered in Claude Code automatically during install. They never touch `.lattice/` files directly — they use MCP tools (`lattice_show`, `lattice_status`, `lattice_comment`, `lattice_complete`).
+Workers (Claude/Codex agents) interact with it through the **Lattice MCP** (Claude Code) or directly via the **Lattice CLI** (any environment). They never touch `.lattice/` files directly — they use the API (`lattice show`, `lattice status`, `lattice comment`, `lattice complete`).
 
 ### Viewing the board
 
@@ -142,26 +165,25 @@ lattice show PROJ-1 --full
 ### How it fits in the SDD workflow
 
 ```
-SDD skill (you + Claude)        Lattice                  agentic-workspace
-────────────────────────        ───────────────────      ─────────────────
+SDD skill (you + agent)         Lattice                  Workers
+────────────────────────        ───────────────────      ─────────────────────────────
 SPEC + PLAN approved   ──►  lattice create TASK-001
                             lattice create TASK-002
                             lattice link T-001 blocks T-002
 
-Write-scope approved   ──►                           agentic-workspace start
-                                                     agentic-workspace spawn claude --task TASK-001
-                                                     agentic-workspace spawn codex  --task TASK-002
+Write-scope approved   ──►                           Agent(isolation="worktree") [Claude Code]
+                                                     agentic-workspace spawn     [tmux terminal]
+                                                     new agent session + worktree [Cursor/Codex]
 
-Workers update state:       ◄── lattice_status in_progress
-via Lattice MCP tools       ◄── lattice_comment "progress..."
-                            ◄── lattice_complete
+Workers update state:       ◄── lattice status in_progress
+via CLI or MCP tools        ◄── lattice comment "progress..."
+                            ◄── lattice complete
 
 Checkpoint reached     ◄──  lattice list --status review
 ```
-
-The SDD skill handles spec and plan. Lattice owns task lifecycle. `agentic-workspace` handles worker spawning and monitoring.
 
 ## Further Reading
 
 - Original article: [@juliandeangeIis on X](https://x.com/juliandeangeIis/status/2033303156340240481)
 - [AlterMundi/Skills](https://github.com/AlterMundi/Skills) — the agent harness this skill was built in, including `agentic-workspace` and `ia-exchange-protocol`
+- [AlterMundi/ia-bridge-mcp](https://github.com/AlterMundi/ia-bridge-mcp) — peer audit tool used in Phase 2.5

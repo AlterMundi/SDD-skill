@@ -10,7 +10,7 @@ argument-hint: "<feature description>"
 
 # SDD — Spec-Driven Development
 
-Run the full SDD cycle: clarifying questions → SPEC → PLAN → task preview → implement.
+Run the full SDD cycle: clarifying questions → SPEC → PLAN → optional audit → task preview → implement.
 
 ## When to use
 
@@ -25,35 +25,74 @@ Run the full SDD cycle: clarifying questions → SPEC → PLAN → task preview 
 
 ---
 
+## Platform Adapters
+
+This skill is platform-agnostic. Where specific tool calls are needed, use the adapter for your environment:
+
+| Operation | Claude Code | Terminal (tmux) | Cursor / Codex / other |
+|-----------|-------------|-----------------|------------------------|
+| **Lattice: create task** | `lattice_create` MCP tool | `lattice create` CLI | `lattice create` CLI |
+| **Lattice: link tasks** | `lattice_link` MCP tool | `lattice link` CLI | `lattice link` CLI |
+| **Lattice: list/check** | `lattice_list` MCP tool | `lattice list` CLI | `lattice list` CLI |
+| **Spawn worker** | `Agent` tool with `isolation: "worktree"` | `agentic-workspace spawn` (requires tmux) | run a new agent session in a fresh worktree |
+| **ia-bridge audit** | `mcp__ia-bridge-mcp__single_opinion_run` | `ia-bridge` CLI | `ia-bridge` CLI |
+| **Check Lattice init** | `lattice_list` MCP tool → inspect error | `lattice list` CLI → inspect error | `lattice list` CLI → inspect error |
+
+If none of the above worker-spawning options are available, fall back to sequential self-implementation (Phase 4, mode 2).
+
+---
+
 ## Prerequisites check
 
-**Before starting Phase 1**, verify Lattice is available by calling `lattice_list` via MCP.
+**Before starting Phase 1**, run two checks:
 
-- **If it succeeds** — all good, proceed to Phase 1.
-- **If it fails** — Lattice is not installed. Tell the user:
+### 1. Lattice availability
+
+Check using the adapter for your platform (MCP tool or CLI — see Platform Adapters above).
+
+- **If it succeeds** — Lattice is installed, proceed to check 2.
+- **If it fails with "command not found" or similar** — Lattice is not installed. Tell the user:
 
   ```
   ⚠️  Lattice is not installed. It is required for Phase 4 (task tracking and worker spawning).
 
   To install:
     uv tool install --force 'lattice-tracker[mcp]'
-    cd <path-to-Skills-repo>/mcps/agentic-workspace && ./install.sh
 
   If uv is not installed:
     curl -LsSf https://astral.sh/uv/install.sh | sh
     source ~/.local/bin/env
     uv tool install --force 'lattice-tracker[mcp]'
-    cd <path-to-Skills-repo>/mcps/agentic-workspace && ./install.sh
 
-  After installing, restart Claude Code so the Lattice MCP is picked up.
+  For Claude Code: also register the Lattice MCP:
+    cd <path-to-Skills-repo>/mcps/agentic-workspace && ./install.sh
+    Then restart your agent environment so the MCP is picked up.
 
   Options:
     [1] Stop here and install now (recommended)
     [2] Continue without Lattice — Phase 4 will run in sequential mode (no parallel workers)
   ```
 
-  Wait for the user's choice before proceeding. If they choose [2], note that Phase 4 will
-  use sequential mode regardless of task count, and skip all Lattice/agentic-workspace steps.
+  Wait for the user's choice before proceeding.
+
+### 2. Lattice project initialization
+
+If Lattice is available, verify it is initialized for this project.
+
+- **If it returns a project** — all good, proceed to Phase 1.
+- **If it fails with "no .lattice/ directory" or "project_code missing"** — the project has not been initialized. Tell the user:
+
+  ```
+  ⚠️  Lattice is installed but not initialized for this project.
+
+  Run:
+    lattice init
+
+  Then set your project_code in .lattice/config (e.g. project_code = MYPROJ).
+  Signal when ready.
+  ```
+
+  Wait for confirmation before proceeding to Phase 1.
 
 ---
 
@@ -63,7 +102,7 @@ Run the full SDD cycle: clarifying questions → SPEC → PLAN → task preview 
 
 ### Steps
 
-1. Read the feature description from `$ARGUMENTS`.
+1. Read the feature description from `$ARGUMENTS` (or from the user's prompt if invoked without a slash command).
 2. Work through the assumptions checklist before writing anything. For each dimension, either fill it from existing codebase knowledge or ask the user:
    - **Actors** — who performs this action? What roles exist?
    - **Boundaries** — which system, service, or API? Which "backoffice"?
@@ -104,7 +143,7 @@ Run the full SDD cycle: clarifying questions → SPEC → PLAN → task preview 
    - Map each change to its REQ refs.
    - Specify rollback procedure, failure modes, observability, and risks.
    - Reference existing patterns explicitly — file paths and line numbers.
-   - List which MCPs or tools workers should use.
+   - List which tools or MCPs workers should use.
 
 ### Gate
 
@@ -114,9 +153,50 @@ Run the full SDD cycle: clarifying questions → SPEC → PLAN → task preview 
 
 ---
 
+## Phase 2.5: AUDIT (optional)
+
+**Goal:** Surface gaps or risks in the plan via a peer agent before committing to task decomposition.
+
+After the PLAN is approved, offer an optional audit step:
+
+```
+PLAN approved. Before decomposing into tasks, would you like an ia-bridge peer audit?
+ia-bridge runs a structured review by a second agent (Codex or another Claude instance)
+and can surface issues the primary agent missed — particularly import/API contract gaps.
+See: https://github.com/AlterMundi/ia-bridge-mcp
+
+  [1] Yes — run ia-bridge audit (recommended for risky or complex changes)
+  [2] No — proceed directly to Phase 3
+```
+
+If the user chooses [1]:
+
+1. Run the audit using the ia-bridge adapter for your platform (see Platform Adapters above), passing the PLAN content as input.
+2. Present the audit findings verbatim.
+3. **Surface this caveat to the user:** The reviewing agent may not have direct file access. Any finding that references specific file contents should be verified against the actual code before acting on it.
+4. For each finding, ask: "Does this change the plan?" If yes, amend `PLAN.md`, show the diff, and re-present for approval before proceeding.
+5. Once findings are resolved (or none required changes), proceed to Phase 3.
+
+---
+
 ## Phase 3: TASK PREVIEW
 
-**Goal:** Break the plan into small, ordered, self-contained tasks ready for Lattice.
+**Goal:** Break the plan into small, ordered, self-contained tasks ready for execution.
+
+### Execution model decision — ask FIRST
+
+Before decomposing tasks, ask the user which execution model Phase 4 will use — this changes how task descriptions must be written:
+
+```
+Before I decompose tasks: which execution model will Phase 4 use?
+  [1] Parallel workers — tasks dispatched to separate agent sessions (worktrees)
+  [2] Sequential self-implementation — I implement each task myself, one at a time
+
+Parallel workers require fully self-contained task descriptions with repo context
+embedded. Sequential tasks can rely on shared session context.
+```
+
+Wait for the answer before decomposing.
 
 ### Steps
 
@@ -127,7 +207,8 @@ Run the full SDD cycle: clarifying questions → SPEC → PLAN → task preview 
    - Have no ambiguity — all context embedded
    - Reference its `spec_ref: REQ-###`
    - Declare dependencies on other tasks
-3. Present the task list as a **transient preview** in chat — do not create a `TASKS.md` file. Format:
+3. **If execution model is parallel (mode 1):** each task description must include a "Cold Agent Context" section (see below). Sequential tasks (mode 2) may omit it.
+4. Present the task list as a **transient preview** in chat — do not create a `TASKS.md` file. Format:
 
 ```
 TASK-001: <title>
@@ -139,6 +220,17 @@ TASK-001: <title>
     - [ ] Returns 403 for non-admin actors
     - [ ] Unit tests cover error paths
   test_plan: Unit + integration with real DB
+  review_steps:
+    - run: npm run build
+    - run: npm test src/items/
+    - grep: "import.*\.\./" src/items/create.ts  # check for alias leakage
+  cold_agent_context: |    # only for parallel/worktree mode
+    Repo layout: packages/api (Express), packages/web (Next.js), packages/shared (types).
+    Files that EXIST and must be modified: src/items/create.ts (line 42: handler entry point).
+    Files that must be CREATED: src/items/create.test.ts (does not exist yet).
+    Critical pattern: use the @api alias (see tsconfig.json paths) — never relative imports
+    across packages. See packages/api/src/auth/verify.ts:12 for the pattern to follow.
+    Gotcha: Three.js is loaded externally via CDN; do not import it directly.
 
 TASK-002: <title>
   spec_ref: REQ-002
@@ -146,7 +238,17 @@ TASK-002: <title>
   ...
 ```
 
-4. Check: is the list overengineered? Can tasks be merged? Flag if yes.
+5. Check: is the list overengineered? Can tasks be merged? Flag if yes.
+
+### Cold Agent Context guidance
+
+For parallel/worktree mode, every task description must give a cold agent enough to start without reading the whole repo. Include:
+
+- **Repo structure summary** — top-level packages or directories relevant to this task
+- **Files that exist vs. files to create** — be explicit; don't assume the agent can infer this
+- **Alias/import conventions** — e.g. `@api`, `@engine` aliases, where they're defined
+- **Critical gotchas** — external deps loaded via CDN, generated files not to edit, env vars required
+- **Pattern reference** — one concrete `file:line` example of the pattern the task should follow
 
 ### Write-scope confirmation
 
@@ -169,52 +271,52 @@ Proceed?
 
 ## Phase 4: IMPLEMENT
 
-**Goal:** Materialize tasks in Lattice and dispatch workers to implement them.
+**Goal:** Materialize tasks and dispatch workers to implement them.
 
 > **CRITICAL — You are the orchestrator, not the implementor.**
-> Do NOT write code yourself in this phase. Your job is to create Lattice tasks and spawn
+> Do NOT write code yourself in this phase. Your job is to create tasks and spawn
 > workers that will do the implementation. The only exception is if the user explicitly asks
 > you to implement directly (e.g. "just do it yourself, no workers").
 
-### Execution mode
+The execution model was already decided at the start of Phase 3. Use that choice.
 
-Ask the user before proceeding:
-
-```
-Ready to create Lattice tasks and spawn workers.
-Execution mode:
-  [1] Full — parallel workers via agentic-workspace (recommended for 3+ tasks)
-  [2] Sequential — I implement each task myself, one at a time (ok for 1-2 small tasks)
-Which mode?
-```
-
-If the user chooses **mode 2**, skip the worker steps below and implement each task
+If the user chose **mode 2 (sequential)**, skip the worker steps below and implement each task
 sequentially, pausing for checkpoint after each one.
 
 ### Steps (mode 1 — parallel workers)
 
-1. Create Lattice tasks using the MCP tools. For each task from the approved preview:
-   ```
-   lattice_create(title="<title>", description="spec_ref: REQ-###\n\n<acceptance criteria>\n\nTest plan: <test plan>")
-   ```
+1. Create Lattice tasks using the adapter for your platform. For each task from the approved preview:
+   - MCP: `lattice_create(title="<title>", description="spec_ref: REQ-###\n\n<acceptance criteria>\n\nCold Agent Context:\n<cold_agent_context>\n\nReview steps:\n<review_steps>\n\nTest plan: <test plan>")`
+   - CLI: `lattice create --title "<title>" --description "..."`
+
    Capture the returned task ID (e.g. `PROJ-1`) for each task.
 
 2. Link dependencies using the returned IDs:
+   - MCP: `lattice_link(source_id="PROJ-1", target_id="PROJ-2", link_type="blocks")`
+   - CLI: `lattice link PROJ-1 blocks PROJ-2`
+
+3. Spawn workers for independent (unblocked) tasks using the adapter for your platform:
+
+   **Claude Code** — use the `Agent` tool with `isolation: "worktree"`. Spawn independent tasks in parallel (multiple Agent calls in one message):
    ```
-   lattice_link(source_id="PROJ-1", target_id="PROJ-2", link_type="blocks")
+   Agent(
+     subagent_type="general-purpose",
+     isolation="worktree",
+     prompt="<full task description including cold agent context and review steps>"
+   )
    ```
 
-3. Initialize IAxP governance and start the workspace:
+   **Interactive terminal with tmux** — use `agentic-workspace`:
    ```bash
    agentic-workspace collab-init --project . --agents "claude:implementor,codex:auditor"
    agentic-workspace start --project . --orchestrator claude --heartbeat-interval 30
+   agentic-workspace spawn claude --task PROJ-1
+   agentic-workspace spawn codex  --task PROJ-2 --worktree
    ```
 
-4. Spawn workers for independent (unblocked) tasks:
-   ```bash
-   agentic-workspace spawn claude --task PROJ-1
-   agentic-workspace spawn codex  --task PROJ-2 --worktree   # runs in parallel with PROJ-1
-   ```
+   **Cursor / Codex / other** — open a new agent session in a fresh `git worktree` branch and paste the full task description (including cold agent context). Coordinate merges back to the working branch when tasks complete.
+
+   **No worker spawning available** — fall back to sequential mode: implement each task yourself, one at a time.
 
 ### Execution checkpoints
 
@@ -237,7 +339,7 @@ When all tasks are done:
 
 If an SDD session is interrupted, resume by:
 1. Detecting existing `SDD/<feature-slug>/` — skip completed phases.
-2. Checking Lattice task states to determine where execution left off.
+2. Checking Lattice task states (via MCP or CLI) to determine where execution left off.
 3. Continuing from the first incomplete phase or first pending task.
 
 Never restart from scratch if artifacts already exist. Present what was found and ask the user to confirm before resuming.
