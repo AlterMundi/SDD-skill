@@ -1,5 +1,7 @@
 # SDD — Spec-Driven Development
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A methodology and agent skill for building features with AI coding agents without ambiguity.
 
 ## Why SDD?
