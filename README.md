@@ -164,5 +164,4 @@ The SDD skill handles spec and plan. Lattice owns task lifecycle. `agentic-works
 ## Further Reading
 
 - Original article: [@juliandeangeIis on X](https://x.com/juliandeangeIis/status/2033303156340240481)
-- `mcps/agentic-workspace/SKILL.md` — task execution and worker spawning
-- `ia-exchange-protocol/SKILL.md` — multi-agent governance protocol
+- [AlterMundi/Skills](https://github.com/AlterMundi/Skills) — the agent harness this skill was built in, including `agentic-workspace` and `ia-exchange-protocol`
