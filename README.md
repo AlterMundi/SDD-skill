@@ -12,6 +12,26 @@ SDD solves this by defining *what* to build and *how* to build it before a singl
 >
 > — [@juliandeangeIis](https://x.com/juliandeangeIis/status/2033303156340240481)
 
+## Installation & Updates
+
+### Install the skill
+
+The skill is installed as a symlink into Claude Code's skills directory. You only do this once:
+
+```bash
+ln -sfn /path/to/Skills/skills/sdd ~/.claude/skills/sdd
+```
+
+### Staying up to date
+
+Because it's a symlink, **no reinstall is needed**. The skill reads `SKILL.md` at invocation time, so a `git pull` on this repo is all you need to get the latest version:
+
+```bash
+cd /path/to/Skills && git pull
+```
+
+The next `/sdd` run will use the updated skill automatically.
+
 ## Prerequisites
 
 SDD phases 1–3 (Spec, Plan, task preview) work with no setup beyond the skill itself.
